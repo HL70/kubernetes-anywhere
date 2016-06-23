@@ -97,18 +97,18 @@ for m in $vm_names_worker ; do
   docker-machine ssh ${m} "${install_weave}"
 done
 
-## Connect Weave Net peers to `kube-1`
+## Connect Weave Net peers to `kube-etcd-1`
 
 for m in $vm_names_etcd ; do
-  docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-1')"
+  docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-etcd-1')"
 done
 
 for m in $vm_names_master ; do
-  docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-1')"
+  docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-etcd-1')"
 done
 
 for m in $vm_names_worker ; do
-  docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-1')"
+  docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-etcd-1')"
 done
 
 ## In most cases we need to SSH into the VM in order to communicate with Weave proxy via the UNIX socket,
