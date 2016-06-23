@@ -56,8 +56,12 @@ install_weave=" \
   /usr/local/bin/weave launch-plugin ; \
 "
 
-## TODO: with a private network we still need to find a way to obtain the IPs, as Docker Machine doesn't have it
 if [ "${DOCKER_MACHINE_DRIVER}" = 'digitalocean' ] && ! [ "${DIGITALOCEAN_PRIVATE_NETWORKING}" = 'true' ]; then
+  KA_UNTRUSTED_NETWORK=true
+fi
+
+## TODO: with a private network we still need to find a way to obtain the IPs, as Docker Machine doesn't have it
+if [ "${UNTRUSTED_NETWORK}" = 'true' ]; then
   WEAVE_PASSWORD=$(openssl genrsa 2> /dev/null | openssl base64 | tr -d "=+/\n")
   install_weave="export WEAVE_PASSWORD=${WEAVE_PASSWORD} ; ${install_weave}"
   echo "WEAVE_PASSWORD='${WEAVE_PASSWORD}'" > weave_password
