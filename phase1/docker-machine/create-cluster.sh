@@ -66,9 +66,13 @@ fi
 ## TODO: with a private network we still need to find a way to obtain the IPs, as Docker Machine doesn't have it
 ## HL70: use droplet metadata! https://developers.digitalocean.com/documentation/metadata/
 if [ "${UNTRUSTED_NETWORK}" = 'true' ]; then
-  WEAVE_PASSWORD=$(openssl genrsa 2> /dev/null | openssl base64 | tr -d "=+/\n")
+  if [ -e weave_password ]; then
+    source weave_password
+  else
+    WEAVE_PASSWORD=$(openssl genrsa 2> /dev/null | openssl base64 | tr -d "=+/\n")
+    echo "WEAVE_PASSWORD='${WEAVE_PASSWORD}'" > weave_password
+  fi
   install_weave="export WEAVE_PASSWORD=${WEAVE_PASSWORD} ; ${install_weave}"
-  echo "WEAVE_PASSWORD='${WEAVE_PASSWORD}'" > weave_password
 fi
 
 docker_on() {
@@ -80,18 +84,27 @@ docker_on() {
 ## Create 7 VMs and install weave
 
 for m in $vm_names_etcd ; do
+  if [ $(docker-machine ls | grep -e ${m} | awk {'print $4'}) = 'Running' ]; then
+    continue
+  fi
   docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_ETCD} ${m}
   docker-machine ssh ${m} "${fix_systemd_unit_if_needed}"
   docker-machine ssh ${m} "${install_weave}"
 done
 
 for m in $vm_names_master ; do
+  if [ $(docker-machine ls | grep -e ${m} | awk {'print $4'}) = 'Running' ]; then
+    continue
+  fi
   docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_MASTER} ${m}
   docker-machine ssh ${m} "${fix_systemd_unit_if_needed}"
   docker-machine ssh ${m} "${install_weave}"
 done
 
 for m in $vm_names_worker ; do
+  if [ $(docker-machine ls | grep -e ${m} | awk {'print $4'}) = 'Running' ]; then
+    continue
+  fi
   docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_WORKER} ${m}
   docker-machine ssh ${m} "${fix_systemd_unit_if_needed}"
   docker-machine ssh ${m} "${install_weave}"
