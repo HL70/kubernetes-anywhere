@@ -84,7 +84,7 @@ docker_on() {
 ## Create 7 VMs and install weave
 
 for m in $vm_names_etcd ; do
-  if [ $(docker-machine ls | grep -e ${m} | awk {'print $4'}) = 'Running' ]; then
+  if [ "$(docker-machine ls | grep -e ${m} | awk {'print $4'})" = 'Running' ]; then
     continue
   fi
   docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_ETCD} ${m}
@@ -93,7 +93,7 @@ for m in $vm_names_etcd ; do
 done
 
 for m in $vm_names_master ; do
-  if [ $(docker-machine ls | grep -e ${m} | awk {'print $4'}) = 'Running' ]; then
+  if [ "$(docker-machine ls | grep -e ${m} | awk {'print $4'})" = 'Running' ]; then
     continue
   fi
   docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_MASTER} ${m}
@@ -102,7 +102,7 @@ for m in $vm_names_master ; do
 done
 
 for m in $vm_names_worker ; do
-  if [ $(docker-machine ls | grep -e ${m} | awk {'print $4'}) = 'Running' ]; then
+  if [ "$(docker-machine ls | grep -e ${m} | awk {'print $4'})" = 'Running' ]; then
     continue
   fi
   docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_WORKER} ${m}
