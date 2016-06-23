@@ -38,7 +38,10 @@
 
 DOCKER_MACHINE_DRIVER=${DOCKER_MACHINE_DRIVER:-'virtualbox'}
 
-vm_names=$(seq -f 'kube-%g' 1 7)
+# 3 etcd nodes, 1 master node, 3 worker nodes
+vm_names_etcd=$(seq -f 'kube-etcd-%g' 1 3)
+vm_names_master=$(seq -f 'kube-master-%g' 1 1)
+vm_names_worker=$(seq -f 'kube-worker-%g' 1 3)
 
 fix_systemd_unit_if_needed=" \
   if grep -q MountFlags=slave /etc/systemd/system/docker.service 2> /dev/null ; then \
@@ -61,6 +64,7 @@ if [ "${DOCKER_MACHINE_DRIVER}" = 'digitalocean' ] && ! [ "${DIGITALOCEAN_PRIVAT
 fi
 
 ## TODO: with a private network we still need to find a way to obtain the IPs, as Docker Machine doesn't have it
+## HL70: use droplet metadata! https://developers.digitalocean.com/documentation/metadata/
 if [ "${UNTRUSTED_NETWORK}" = 'true' ]; then
   WEAVE_PASSWORD=$(openssl genrsa 2> /dev/null | openssl base64 | tr -d "=+/\n")
   install_weave="export WEAVE_PASSWORD=${WEAVE_PASSWORD} ; ${install_weave}"
@@ -75,15 +79,35 @@ docker_on() {
 
 ## Create 7 VMs and install weave
 
-for m in $vm_names ; do
-  docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${m}
+for m in $vm_names_etcd ; do
+  docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_ETCD} ${m}
+  docker-machine ssh ${m} "${fix_systemd_unit_if_needed}"
+  docker-machine ssh ${m} "${install_weave}"
+done
+
+for m in $vm_names_master ; do
+  docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_MASTER} ${m}
+  docker-machine ssh ${m} "${fix_systemd_unit_if_needed}"
+  docker-machine ssh ${m} "${install_weave}"
+done
+
+for m in $vm_names_worker ; do
+  docker-machine create --driver ${DOCKER_MACHINE_DRIVER} ${DOCKER_MACHINE_OPTIONS_WORKER} ${m}
   docker-machine ssh ${m} "${fix_systemd_unit_if_needed}"
   docker-machine ssh ${m} "${install_weave}"
 done
 
 ## Connect Weave Net peers to `kube-1`
 
-for m in $vm_names ; do
+for m in $vm_names_etcd ; do
+  docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-1')"
+done
+
+for m in $vm_names_master ; do
+  docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-1')"
+done
+
+for m in $vm_names_worker ; do
   docker-machine ssh ${m} "/usr/local/bin/weave connect $(docker-machine ip 'kube-1')"
 done
 
@@ -94,17 +118,17 @@ weaveproxy_socket="-H unix:///var/run/weave/weave.sock"
 
 ## Start etcd on `kube-{1,2,3}`
 
-docker_on 'kube-1' ${weaveproxy_socket} run --detach \
+docker_on 'kube-etcd-1' ${weaveproxy_socket} run --detach \
   --env="ETCD_CLUSTER_SIZE=3" \
   --name="etcd1" \
     weaveworks/kubernetes-anywhere:etcd-v1.2
 
-docker_on 'kube-2' ${weaveproxy_socket} run --detach \
+docker_on 'kube-etcd-2' ${weaveproxy_socket} run --detach \
   --env="ETCD_CLUSTER_SIZE=3" \
   --name="etcd2" \
     weaveworks/kubernetes-anywhere:etcd-v1.2
 
-docker_on 'kube-3' ${weaveproxy_socket} run --detach \
+docker_on 'kube-etcd-3' ${weaveproxy_socket} run --detach \
   --env="ETCD_CLUSTER_SIZE=3" \
   --name="etcd3" \
     weaveworks/kubernetes-anywhere:etcd-v1.2
@@ -112,7 +136,7 @@ docker_on 'kube-3' ${weaveproxy_socket} run --detach \
 ## Create TLS config volumes that will be transfered to worker nodes via `docker save | docker load` pipe
 ## In this instance it's easier to use remote Docker API, as Weave proxy is not required for this part
 
-master_config=$(docker-machine config 'kube-4')
+master_config=$(docker-machine config 'kube-master-1')
 
 docker ${master_config} run \
   -v /var/run/docker.sock:/docker.sock \
@@ -135,32 +159,32 @@ docker ${master_config} save \
     kubernetes-anywhere:proxy-pki \
     kubernetes-anywhere:toolbox-pki \
   | tee \
-    >(docker $(docker-machine config 'kube-5') load) \
-    >(docker $(docker-machine config 'kube-6') load) \
-    >(docker $(docker-machine config 'kube-7') load) \
+    >(docker $(docker-machine config 'kube-worker-1') load) \
+    >(docker $(docker-machine config 'kube-worker-2') load) \
+    >(docker $(docker-machine config 'kube-worker-3') load) \
   | cat > /dev/null
 
 ## Launch the master components using volumes provided as artefact of running the `*-pki` containers
 
-docker_on 'kube-4' ${weaveproxy_socket} run --detach \
+docker_on 'kube-master-1' ${weaveproxy_socket} run --detach \
   --env="ETCD_CLUSTER_SIZE=3" \
   --name="kube-apiserver" \
   --volumes-from="kube-apiserver-pki" \
     weaveworks/kubernetes-anywhere:apiserver-v1.2
 
-docker_on 'kube-4' ${weaveproxy_socket} run --detach \
+docker_on 'kube-master-1' ${weaveproxy_socket} run --detach \
   --name="kube-scheduler" \
   --volumes-from="kube-scheduler-pki" \
     weaveworks/kubernetes-anywhere:scheduler-v1.2
 
-docker_on 'kube-4' ${weaveproxy_socket} run --detach \
+docker_on 'kube-master-1' ${weaveproxy_socket} run --detach \
   --name="kube-controller-manager" \
   --volumes-from="kube-controller-manager-pki" \
     weaveworks/kubernetes-anywhere:controller-manager-v1.2
 
 ## Launch kubelet and proxy on each of the worker nodes
 
-for m in 'kube-5' 'kube-6' 'kube-7' ; do
+for m in 'kube-worker-1' 'kube-worker-2' 'kube-worker-3' ; do
   worker_config=$(docker-machine config ${m})
 
   ## Expose host to Weave Net and provide a DNS record that kubelet will pick up, as it runs in host namespace
@@ -202,7 +226,7 @@ for m in 'kube-5' 'kube-6' 'kube-7' ; do
 done
 
 ## Run toolbox container to deploy cluster addons
-docker_on 'kube-4' ${weaveproxy_socket} run \
+docker_on 'kube-master-1' ${weaveproxy_socket} run \
   --volumes-from="kube-toolbox-pki" \
     weaveworks/kubernetes-anywhere:toolbox-v1.2 \
       kubectl create -f addons.yaml
