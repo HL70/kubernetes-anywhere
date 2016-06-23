@@ -57,7 +57,7 @@ install_weave=" \
 "
 
 if [ "${DOCKER_MACHINE_DRIVER}" = 'digitalocean' ] && ! [ "${DIGITALOCEAN_PRIVATE_NETWORKING}" = 'true' ]; then
-  KA_UNTRUSTED_NETWORK=true
+  UNTRUSTED_NETWORK=true
 fi
 
 ## TODO: with a private network we still need to find a way to obtain the IPs, as Docker Machine doesn't have it
